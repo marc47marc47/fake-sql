@@ -57,9 +57,8 @@ assert_eq!(table.columns.len(), 2);
 
 
 ## main
-```rust
 use for main.rs
-
+```rust
 mod models;
  
 use models::{Table, SqlType};
