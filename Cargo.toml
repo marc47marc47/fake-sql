@@ -7,7 +7,7 @@ description = "generate create table, alter table, drop table, insert, update, d
 homepage = "https://github.com/marc47marc47/fake-sql"
 readme = "README.md"
 license = "Apache-2.0"
-keywords = ["sql", "oracle", "testing", "fake", "rand", "database"]
+keywords = ["sql", "oracle", "testing", "database"]
 categories = ["database-implementations", "development-tools::testing", "development-tools"]
 
 
