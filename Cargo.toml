@@ -1,6 +1,6 @@
 [package]
 name = "fake-sql"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["MarcXiao <marc47marc47@gmail.com>"]
 description = "generate create table, alter table, drop table, insert, update, delete and select sql"
