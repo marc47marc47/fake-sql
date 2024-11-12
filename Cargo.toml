@@ -7,3 +7,8 @@ edition = "2021"
 chrono = "0.4.38"
 rand = "0.8.5"
 regex = "1.11.1"
+
+[dev-dependencies]
+rand = "0.8"
+chrono = "0.4"
+regex = "1"
