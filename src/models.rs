@@ -4,6 +4,7 @@ use rand::Rng;
 use chrono::{NaiveDate, Duration};
 use regex::Regex;
 
+/// Enum representing different types of SQL operations.
 #[derive(Copy, Clone)]
 pub enum SqlType {
     CreateTable,
@@ -15,12 +16,14 @@ pub enum SqlType {
     Delete,
 }
 
+/// Struct representing a database table.
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
     pub comment: Option<String>,
 }
 
+/// Struct representing a column in a database table.
 pub struct Column {
     pub name: String,
     pub column_type: String,
@@ -33,6 +36,46 @@ pub struct Column {
 }
 
 impl Table {
+    /// Initializes a new `Table` with the given name and columns.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string slice that holds the name of the table.
+    /// * `columns` - A vector of `Column` structs representing the columns of the table.
+    ///
+    /// # Returns
+    ///
+    /// A `Table` struct.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let columns = vec![
+    ///     Column {
+    ///         name: "id".to_string(),
+    ///         column_type: "number".to_string(),
+    ///         length: Some(10),
+    ///         decimal_places: None,
+    ///         is_nullable: false,
+    ///         is_pkey: true,
+    ///         ref_table: None,
+    ///         ref_column: None,
+    ///     },
+    ///     Column {
+    ///         name: "name".to_string(),
+    ///         column_type: "varchar".to_string(),
+    ///         length: Some(255),
+    ///         decimal_places: None,
+    ///         is_nullable: true,
+    ///         is_pkey: false,
+    ///         ref_table: None,
+    ///         ref_column: None,
+    ///     },
+    /// ];
+    /// let table = Table::init("test_table".to_string(), columns);
+    /// assert_eq!(table.name, "test_table");
+    /// assert_eq!(table.columns.len(), 2);
+    /// ```
     pub fn init(name: String, columns: Vec<Column>) -> Table {
         Table {
             name,
@@ -41,6 +84,26 @@ impl Table {
         }
     }
 
+    /// Initializes a new `Table` from a SQL create table string.
+    ///
+    /// # Arguments
+    ///
+    /// * `create_table_string` - A string slice that holds the SQL create table statement.
+    ///
+    /// # Returns
+    ///
+    /// A `Table` struct.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let sql = "create table test_table (id number(10) primary key, name varchar(255))";
+    /// let table = Table::init_via_sql(sql);
+    /// assert_eq!(table.name, "test_table");
+    /// assert_eq!(table.columns.len(), 2);
+    /// assert_eq!(table.columns[0].name, "id");
+    /// assert_eq!(table.columns[1].name, "name");
+    /// ```
     pub fn init_via_sql(create_table_string: &str) -> Table {
         let create_table_string = create_table_string.to_lowercase().trim().to_string();
         let comment = None;
@@ -99,6 +162,15 @@ impl Table {
         }
     }
 
+    /// Parses references from column parts.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_parts` - A slice of string slices representing parts of a column definition.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the referenced table and column, if any.
     pub fn parse_references(column_parts: &[&str]) -> (Option<String>, Option<String>) {
         if let Some(pos) = column_parts.iter().position(|&s| s == "references") {
             let ref_table = column_parts.get(pos + 1).map(|s| s.to_string());
@@ -109,6 +181,11 @@ impl Table {
         }
     }
 
+    /// Generates a SQL WHERE clause based on the table's columns.
+    ///
+    /// # Returns
+    ///
+    /// A string representing the SQL WHERE clause.
     pub fn generate_where_clause(&self) -> String {
         let mut rng = thread_rng();
         let mut conditions = vec![];
@@ -138,6 +215,45 @@ impl Table {
         conditions.join(" AND ")
     }
 
+    /// Generates a SQL statement based on the table and SQL type.
+    ///
+    /// # Arguments
+    ///
+    /// * `sql_type` - The type of SQL statement to generate.
+    ///
+    /// # Returns
+    ///
+    /// A string representing the SQL statement.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let columns = vec![
+    ///     Column {
+    ///         name: "id".to_string(),
+    ///         column_type: "number".to_string(),
+    ///         length: Some(10),
+    ///         decimal_places: None,
+    ///         is_nullable: false,
+    ///         is_pkey: true,
+    ///         ref_table: None,
+    ///         ref_column: None,
+    ///     },
+    ///     Column {
+    ///         name: "name".to_string(),
+    ///         column_type: "varchar".to_string(),
+    ///         length: Some(255),
+    ///         decimal_places: None,
+    ///         is_nullable: true,
+    ///         is_pkey: false,
+    ///         ref_table: None,
+    ///         ref_column: None,
+    ///     },
+    /// ];
+    /// let table = Table::init("test_table".to_string(), columns);
+    /// let sql = table.generate(SqlType::CreateTable);
+    /// assert_eq!(sql, "CREATE TABLE test_table (id number(10) NOT NULL PRIMARY KEY, name varchar(255));");
+    /// ```
     pub fn generate(&self, sql_type: SqlType) -> String {
         match sql_type {
             SqlType::CreateTable => {
@@ -251,6 +367,11 @@ impl Table {
         }
     }
     
+    /// Sets a comment for the table.
+    ///
+    /// # Arguments
+    ///
+    /// * `comment` - An optional string slice that holds the comment for the table.
     pub fn set_comment(&mut self, comment: Option<String>) {
         self.comment = comment;
     }

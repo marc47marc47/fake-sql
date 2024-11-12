@@ -1,7 +1,15 @@
 [package]
-name = "sql-gen2"
+name = "fake-sql"
 version = "0.1.0"
 edition = "2021"
+authors = ["MarcXiao <marc47marc47@gmail.com>"]
+description = "generate create table, alter table, drop table, insert, update, delete and select sql"
+homepage = "https://github.com/marc47marc47/fake-sql"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = ["sql", "oracle", "testing", "fake", "rand", "database"]
+categories = ["database-implementations", "development-tools::testing", "development-tools"]
+
 
 [dependencies]
 chrono = "0.4.38"
