@@ -1,4 +1,4 @@
-### sql-fake
+### fake-sql
 
 This program generates random SQL statements and writes them to a file named output.sql. The number of SQL statements to generate is determined by the NUM_RECORDS environment variable, defaulting to 30 if the variable is not set.
 
