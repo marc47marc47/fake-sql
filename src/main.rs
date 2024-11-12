@@ -1,265 +1,205 @@
-use rand::prelude::*;
-use std::fmt;
-use std::fs::File;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use std::fs::OpenOptions;
 use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
-use chrono::Local;
 
-#[derive(Debug, Clone)]
-enum ColumnType {
-    String,
-    Number,
-    Date,
-    DateTime,
+//struct Table
+// Name: String
+// ref_table: String
+// ref_column: String
+
+
+#[derive(Copy, Clone)]
+enum SqlType {
+    CreateTable,
+    AlterTable,
+    DropTable,
+    Insert,
+    Select,
+    Update,
+    Delete,
 }
 
-#[derive(Debug, Clone)]
-struct Column {
-    name: String,
-    col_type: ColumnType,
-}
 
-#[derive(Debug, Clone)]
 struct Table {
     name: String,
+    ref_table: String,
+    ref_column: String,
+}
+
+//struct column
+// Name: String
+// Type: String
+// length: i32
+// is_nullable: bool
+// is_pkey: bool
+
+struct Column {
+    name: String,
+    column_type: String,
+    length: i32,
+    is_nullable: bool,
+    is_pkey: bool,
+}
+
+//struct FakeSql
+// Table: Table
+// columns: Vec<column>
+
+struct FakeSql {
+    table: Table,
     columns: Vec<Column>,
 }
 
-impl Table {
-    fn new(name: &str, custom_columns: Vec<Column>) -> Self {
-        let mut columns = custom_columns;
-        columns.push(Column {
-            name: "creation_date".to_string(),
-            col_type: ColumnType::DateTime,
-        });
-        columns.push(Column {
-            name: "last_updated_date".to_string(),
-            col_type: ColumnType::DateTime,
-        });
-        columns.push(Column {
-            name: "created_by".to_string(),
-            col_type: ColumnType::String,
-        });
-        columns.push(Column {
-            name: "last_updated_by".to_string(),
-            col_type: ColumnType::String,
-        });
-        Table {
-            name: name.to_string(),
+//impl FakeSql
+//fn init(table: Table, columns: Vec<column>) -> FakeSql
+//fn addColumn(column: column) -> FakeSql
+//fn generate() -> String
+
+impl FakeSql {
+    fn init(table: Table, columns: Vec<Column>) -> FakeSql {
+        FakeSql { table, columns }
+    }
+
+    fn add_column(&mut self, column: Column) {
+        self.columns.push(column);
+    }
+
+    fn init_via_sql(create_table_string: &str) -> FakeSql {
+        let parts: Vec<&str> = create_table_string
+            .trim_start_matches("create table ")
+            .split('(')
+            .collect();
+        let table_name = parts[0].trim().to_string();
+
+        let columns_part = parts[1].trim_end_matches(')').trim();
+        let columns_str: Vec<&str> = columns_part.split(',').collect();
+
+        let mut columns = vec![];
+        let table = Table {
+            name: table_name,
+            ref_table: String::new(),
+            ref_column: String::new(),
+        };
+
+        for column_str in columns_str {
+            let column_parts: Vec<&str> = column_str.trim().split_whitespace().collect();
+            let name = column_parts[0];
+            let column_type = column_parts[1];
+            let is_pkey = column_parts.len() > 2 && column_parts[2] == "primary" && column_parts[3] == "key";
+
+            columns.push(Column {
+                name: name.to_string(),
+                column_type: column_type.to_string(),
+                length: 0, // Length is not provided in the string, so we set it to 0
+                is_nullable: !is_pkey, // Assume non-primary key columns are nullable
+                is_pkey,
+            });
+        }
+
+        FakeSql {
+            table,
             columns,
         }
     }
-}
 
-struct TableSchema;
-
-impl TableSchema {
-    fn orders() -> Table {
-        Table::new("ord_orders", vec![
-            Column { name: "order_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "customer_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "order_date".to_string(), col_type: ColumnType::Date },
-        ])
-    }
-
-    fn customers() -> Table {
-        Table::new("pub_customers", vec![
-            Column { name: "customer_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "name".to_string(), col_type: ColumnType::String },
-            Column { name: "email".to_string(), col_type: ColumnType::String },
-            Column { name: "phone".to_string(), col_type: ColumnType::String },
-        ])
-    }
-
-    fn products() -> Table {
-        Table::new("pub_products", vec![
-            Column { name: "product_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "product_name".to_string(), col_type: ColumnType::String },
-            Column { name: "price".to_string(), col_type: ColumnType::Number },
-        ])
-    }
-
-    fn order_details() -> Table {
-        Table::new("ord_order_details", vec![
-            Column { name: "order_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "product_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "quantity".to_string(), col_type: ColumnType::Number },
-            Column { name: "price".to_string(), col_type: ColumnType::Number },
-        ])
-    }
-
-    fn tmp_order_agg() -> Table {
-        Table::new("tmp_order_agg", vec![
-            Column { name: "order_id".to_string(), col_type: ColumnType::Number },
-            Column { name: "total_amount".to_string(), col_type: ColumnType::Number },
-            Column { name: "order_date".to_string(), col_type: ColumnType::Date },
-        ])
-    }
-}
-
-#[derive(Debug, Clone)]
-enum SqlStatement {
-    CreateTable(Table),
-    DropTable(String),
-    AlterTable(String),
-    Insert(String, Vec<String>),
-    Delete(String, String, i32),
-    Update(String, Vec<String>, String, i32),
-    Select(String, Vec<String>, Vec<String>),
-}
-
-impl fmt::Display for SqlStatement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let current_date = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        match self {
-            SqlStatement::CreateTable(table) => write!(
-                f,
-                "create table {} ({})",
-                table.name,
-                table
-                    .columns
-                    .iter()
-                    .map(|col| format!("{} {}", col.name, match col.col_type {
-                        ColumnType::String => "VARCHAR2(100)",
-                        ColumnType::Number => "NUMBER",
-                        ColumnType::Date => "DATE",
-                        ColumnType::DateTime => "TIMESTAMP",
-                    }))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            SqlStatement::DropTable(name) => write!(f, "drop table {}", name),
-            SqlStatement::AlterTable(name) => write!(f, "alter table {} add column new_column VARCHAR2(50)", name),
-            SqlStatement::Insert(table_name, columns) => write!(
-                f,
-                "insert into {} ({}) values (1, TO_TIMESTAMP('{}', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('{}', 'YYYY-MM-DD HH24:MI:SS'), 'John', 'Jane')",
-                table_name,
-                columns.join(", "),
-                current_date,
-                current_date
-            ),
-            SqlStatement::Delete(table_name, id_column, id_value) => write!(
-                f,
-                "delete from {} where {} = {}",
-                table_name,
-                id_column,
-                id_value
-            ),
-            SqlStatement::Update(table_name, updates, id_column, id_value) => write!(
-                f,
-                "update {} set {} where {} = {}",
-                table_name,
-                updates.join(", "),
-                id_column,
-                id_value
-            ),
-            SqlStatement::Select(table_name, columns, conditions) => write!(
-                f,
-                "select {} from {} where {}",
-                columns.join(", "),
-                table_name,
-                conditions.join(" and ")
-            ),
+    fn generate(&self, sql_type: SqlType) -> String {
+        match sql_type {
+            SqlType::CreateTable => {
+                let mut sql = format!("CREATE TABLE {} (\n", self.table.name);
+                for column in &self.columns {
+                    sql.push_str(&format!(
+                        "    {} {}({}) {} {},\n",
+                        column.name,
+                        column.column_type,
+                        column.length,
+                        if column.is_nullable { "NULL" } else { "NOT NULL" },
+                        if column.is_pkey { "PRIMARY KEY" } else { "" }
+                    ));
+                }
+                sql.push_str(");");
+                sql
+            }
+            SqlType::AlterTable => {
+                let mut sql = format!("ALTER TABLE {} ", self.table.name);
+                for column in &self.columns {
+                    sql.push_str(&format!(
+                        "ADD COLUMN {} {}({}) {} {}, ",
+                        column.name,
+                        column.column_type,
+                        column.length,
+                        if column.is_nullable { "NULL" } else { "NOT NULL" },
+                        if column.is_pkey { "PRIMARY KEY" } else { "" }
+                    ));
+                }
+                sql.trim_end_matches(", ").to_string() + ";"
+            }
+            SqlType::DropTable => format!("DROP TABLE {};", self.table.name),
+            SqlType::Insert => {
+                let column_names: Vec<String> = self.columns.iter().map(|c| c.name.clone()).collect();
+                let values: Vec<String> = self.columns.iter().map(|_| "?".to_string()).collect();
+                format!(
+                    "INSERT INTO {} ({}) VALUES ({});",
+                    self.table.name,
+                    column_names.join(", "),
+                    values.join(", ")
+                )
+            }
+            SqlType::Select => {
+                let column_names: Vec<String> = self.columns.iter().map(|c| c.name.clone()).collect();
+                format!(
+                    "SELECT {} FROM {};",
+                    column_names.join(", "),
+                    self.table.name
+                )
+            }
+            SqlType::Update => {
+                let column_names: Vec<String> = self.columns.iter().map(|c| format!("{} = ?", c.name)).collect();
+                format!(
+                    "UPDATE {} SET {} WHERE <condition>;",
+                    self.table.name,
+                    column_names.join(", ")
+                )
+            }
+            SqlType::Delete => format!("DELETE FROM {} WHERE <condition>;", self.table.name),
         }
     }
 }
 
-fn generate_sql_statement() -> SqlStatement {
-    let mut rng = rand::thread_rng();
-    let weight_distribution = [10, 10, 10, 20, 20, 20, 10];
-    let choices = [
-        SqlStatement::CreateTable(TableSchema::tmp_order_agg()),
-        SqlStatement::DropTable("tmp_order_agg".to_string()),
-        SqlStatement::AlterTable("tmp_order_agg".to_string()),
-        SqlStatement::Insert(
-            "ord_orders".to_string(),
-            TableSchema::orders().columns.iter().map(|c| c.name.clone()).collect(),
-        ),
-        SqlStatement::Insert(
-            "pub_customers".to_string(),
-            TableSchema::customers().columns.iter().map(|c| c.name.clone()).collect(),
-        ),
-        SqlStatement::Insert(
-            "pub_products".to_string(),
-            TableSchema::products().columns.iter().map(|c| c.name.clone()).collect(),
-        ),
-        SqlStatement::Insert(
-            "ord_order_details".to_string(),
-            TableSchema::order_details().columns.iter().map(|c| c.name.clone()).collect(),
-        ),
-        SqlStatement::Delete("ord_orders".to_string(), "order_id".to_string(), rng.gen_range(3333..=99999)),
-        SqlStatement::Delete("pub_customers".to_string(), "customer_id".to_string(), rng.gen_range(3333..=99999)),
-        SqlStatement::Delete("pub_products".to_string(), "product_id".to_string(), rng.gen_range(3333..=99999)),
-        SqlStatement::Delete("ord_order_details".to_string(), "order_id".to_string(), rng.gen_range(3333..=99999)),
-        SqlStatement::Update(
-            "ord_orders".to_string(),
-            vec!["last_updated_date = TO_TIMESTAMP('2023-11-12 12:00:00', 'YYYY-MM-DD HH24:MI:SS')", "last_updated_by = 'John'"].iter().map(|&s| s.to_string()).collect(),
-            "order_id".to_string(),
-            rng.gen_range(3333..=99999),
-        ),
-        SqlStatement::Update(
-            "pub_customers".to_string(),
-            vec!["last_updated_date = TO_TIMESTAMP('2023-11-12 12:00:00', 'YYYY-MM-DD HH24:MI:SS')", "last_updated_by = 'John'"].iter().map(|&s| s.to_string()).collect(),
-            "customer_id".to_string(),
-            rng.gen_range(3333..=99999),
-        ),
-        SqlStatement::Update(
-            "pub_products".to_string(),
-            vec!["last_updated_date = TO_TIMESTAMP('2023-11-12 12:00:00', 'YYYY-MM-DD HH24:MI:SS')", "last_updated_by = 'John'"].iter().map(|&s| s.to_string()).collect(),
-            "product_id".to_string(),
-            rng.gen_range(3333..=99999),
-        ),
-        SqlStatement::Update(
-            "ord_order_details".to_string(),
-            vec!["last_updated_date = TO_TIMESTAMP('2023-11-12 12:00:00', 'YYYY-MM-DD HH24:MI:SS')", "last_updated_by = 'John'"].iter().map(|&s| s.to_string()).collect(),
-            "order_id".to_string(),
-            rng.gen_range(3333..=99999),
-        ),
-        SqlStatement::Select(
-            "ord_orders".to_string(),
-            {
-                let selected_columns = vec!["order_id", "customer_id", "order_date", "created_by", "creation_date", "last_updated_by", "last_updated_date"];
-                let num_columns = rng.gen_range(1..=3);
-                selected_columns.choose_multiple(&mut rng, num_columns).cloned().map(String::from).collect()
-            },
-            {
-                let conditions_pool = vec![
-                    format!("order_id > {}", rng.gen_range(3333..=99999)),
-                    format!("customer_id <= {}", rng.gen_range(3333..=99999)),
-                    "status in ('PENDING', 'COMPLETED')".to_string(),
-                    format!("creation_date between TO_TIMESTAMP('{}', 'YYYY-MM-DD HH24:MI:SS') and TO_TIMESTAMP('{}', 'YYYY-MM-DD HH24:MI:SS')", Local::now().format("%Y-%m-%d 00:00:00"), Local::now().format("%Y-%m-%d %H:%M:%S")),
-                    "created_by in ('John', 'Jane', 'Alice')".to_string(),
-                ];
-                let num_conditions = rng.gen_range(1..=5);
-                conditions_pool.choose_multiple(&mut rng, num_conditions).cloned().collect()
-            },
-        ),
-    ];
-    choices
-        .choose_weighted(&mut rng, |item| match item {
-            SqlStatement::CreateTable(_) => weight_distribution[0],
-            SqlStatement::DropTable(_) => weight_distribution[1],
-            SqlStatement::AlterTable(_) => weight_distribution[2],
-            SqlStatement::Insert(_, _) => weight_distribution[3],
-            SqlStatement::Delete(_, _, _) => weight_distribution[4],
-            SqlStatement::Update(_, _, _, _) => weight_distribution[5],
-            SqlStatement::Select(_, _, _) => weight_distribution[6],
-        })
-        .unwrap()
-        .clone()
-}
 
 fn main() {
-    let start = SystemTime::now();
-    let datetime = start.duration_since(UNIX_EPOCH).unwrap();
-    let timestamp = chrono::NaiveDateTime::from_timestamp(datetime.as_secs() as i64, 0);
-    let file_name = format!("sql_logs_{}.log", timestamp.format("%Y_%m_%d_%H_%M"));
-    let mut file = File::create(&file_name).expect("Unable to create file");
+    // get env for generate number of records for generate
+    let num_records = std::env::var("NUM_RECORDS").unwrap_or("10".to_string()).parse::<i32>().unwrap();
 
-    for _ in 0..1000 {
-        let sql_statement = generate_sql_statement();
-        writeln!(file, "{}", sql_statement).expect("Unable to write data");
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("output.sql")
+        .expect("Unable to open file");
+
+    let order: FakeSql = FakeSql::init_via_sql("create table orders(order_id number(10) primary key, order_date date, customer_id number(10))");
+    let customers: FakeSql = FakeSql::init_via_sql("create table customers(customer_id number(10) primary key, customer_name varchar(255), customer_email varchar(255))");
+    let products: FakeSql = FakeSql::init_via_sql("create table products(product_id number(10) primary key, product_name varchar(255), product_price number(10, 2))");
+
+    let tables = vec![order, customers, products];
+
+    let sql_types = vec![
+        SqlType::CreateTable,
+        SqlType::AlterTable,
+        SqlType::DropTable,
+        SqlType::Insert,
+        SqlType::Select,
+        SqlType::Update,
+        SqlType::Delete,
+    ];
+
+    //write to file
+    for _ in 0..num_records {
+        let mut rng = thread_rng();
+        let random_sql_type = sql_types.choose(&mut rng).unwrap();
+        let random_table = tables.choose(&mut rng).unwrap();
+
+        let sql = random_table.generate(*random_sql_type);
+        writeln!(file, "{}", sql).expect("Unable to write to file");
     }
-    println!("SQL logs written to: {}", file_name);
 }
-
